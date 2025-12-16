@@ -9,39 +9,39 @@ SCREEN_WIDTH = 600
 SCREEN_HEIGHT = 800
 FPS = 60
 
-# 色定義 (画像がない場合の代用)
+# 色定義
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 RED = (255, 0, 0)
 GREEN = (0, 255, 0)
 BLUE = (0, 0, 255)
 YELLOW = (255, 255, 0)
+PURPLE = (128, 0, 128)
 
 # 敵の種類
 ENEMY_TYPE_NORMAL = 0
 ENEMY_TYPE_WAVY = 1
 ENEMY_TYPE_SHOOTER = 2
 
-# --- 2. 必須設定 (講義資料 P.8, P.10) ---
-# 実行環境によるパスのずれを防ぐため、作業ディレクトリをこのファイルのある場所に変更
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
+# ボス出現スコア間隔
+BOSS_APPEAR_INTERVAL = 150
 
+# --- 2. 必須設定 ---
+# 作業ディレクトリの固定
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 class Player(pygame.sprite.Sprite):
     """自機クラス"""
     def __init__(self):
         super().__init__()
-        # 本来は pygame.image.load("player.png") などを使う
         self.image = pygame.Surface((30, 30))
-        self.image.fill(BLUE)  # 自機は青い四角
+        self.image.fill(BLUE)
         self.rect = self.image.get_rect()
         self.rect.center = (SCREEN_WIDTH // 2, SCREEN_HEIGHT - 50)
         self.speed = 5
-        self.shoot_delay = 0
         self.last_shot_time = 0
 
     def update(self):
-        # キー入力処理
         keys = pygame.key.get_pressed()
         if keys[pygame.K_LEFT] and self.rect.left > 0:
             self.rect.x -= self.speed
@@ -53,31 +53,33 @@ class Player(pygame.sprite.Sprite):
             self.rect.y += self.speed
 
     def shoot(self):
-        """弾を発射するメソッド"""
-        # 連射制限
         now = pygame.time.get_ticks()
-        if now - self.last_shot_time > 100:  # 100msごとに発射
-            bullet = Bullet(self.rect.centerx, self.rect.top, -10, is_player_bullet=True)
-            all_sprites.add(bullet)
-            player_bullets.add(bullet)
+        if now - self.last_shot_time > 80:
+            # 3WAY弾
+            bullet_centers = [0, -15, 15]
+            for angle in bullet_centers:
+                rad = math.radians(angle)
+                vx = math.sin(rad) * 10
+                vy = -math.cos(rad) * 10
+                bullet = Bullet(self.rect.centerx, self.rect.top, vy, vx, is_player_bullet=True)
+                all_sprites.add(bullet)
+                player_bullets.add(bullet)
             self.last_shot_time = now
 
-
 class Enemy(pygame.sprite.Sprite):
-    """敵クラス（3種類の挙動）"""
+    """ザコ敵クラス"""
     def __init__(self, enemy_type):
         super().__init__()
         self.enemy_type = enemy_type
         self.image = pygame.Surface((30, 30))
         
-        # タイプによって色を変える
         if self.enemy_type == ENEMY_TYPE_NORMAL:
             self.image.fill(RED)
             self.speed_y = 3
         elif self.enemy_type == ENEMY_TYPE_WAVY:
             self.image.fill(GREEN)
             self.speed_y = 2
-            self.t = 0  # サイン波用の時間変数
+            self.t = 0
         elif self.enemy_type == ENEMY_TYPE_SHOOTER:
             self.image.fill(YELLOW)
             self.speed_y = 1
@@ -85,57 +87,87 @@ class Enemy(pygame.sprite.Sprite):
 
         self.rect = self.image.get_rect()
         self.rect.x = random.randrange(0, SCREEN_WIDTH - self.rect.width)
-        self.rect.y = -50 # 画面外から出現
+        self.rect.y = -50
 
     def update(self):
-        # 共通：下に移動
         self.rect.y += self.speed_y
 
-        # タイプ別の動き
         if self.enemy_type == ENEMY_TYPE_WAVY:
-            # 蛇行運転 (サイン波)
             self.t += 0.1
             self.rect.x += math.sin(self.t) * 5
-
         elif self.enemy_type == ENEMY_TYPE_SHOOTER:
-            # 定期的に弾を撃つ
             self.shoot_timer += 1
-            if self.shoot_timer > 120:  # 約2秒ごとに発射
+            if self.shoot_timer > 120:
                 self.shoot_at_player()
                 self.shoot_timer = 0
 
-        # 画面外に出たら消える
         if self.rect.top > SCREEN_HEIGHT:
             self.kill()
 
     def shoot_at_player(self):
-        """自機に向かって弾を撃つ"""
-        # 自機の位置を取得（簡易的にplayer変数を参照）
         dx = player.rect.centerx - self.rect.centerx
         dy = player.rect.centery - self.rect.centery
         angle = math.atan2(dy, dx)
         speed = 5
         vx = math.cos(angle) * speed
         vy = math.sin(angle) * speed
-        
         bullet = Bullet(self.rect.centerx, self.rect.centery, vy, vx, is_player_bullet=False)
         all_sprites.add(bullet)
         enemy_bullets.add(bullet)
 
+class Boss(pygame.sprite.Sprite):
+    """ボスクラス"""
+    def __init__(self, level=1):
+        super().__init__()
+        self.image = pygame.Surface((60, 60))
+        self.image.fill(PURPLE)
+        self.rect = self.image.get_rect()
+        self.rect.center = (SCREEN_WIDTH // 2, -100)
+        
+        self.max_hp = 100 * level
+        self.hp = self.max_hp
+        self.state = "entry"
+        self.angle = 0
+        self.timer = 0
+
+    def update(self):
+        if self.state == "entry":
+            self.rect.y += 2
+            if self.rect.y >= 100:
+                self.state = "battle"
+        
+        elif self.state == "battle":
+            self.timer += 1
+            self.rect.x = (SCREEN_WIDTH // 2) + math.sin(self.timer * 0.05) * 150
+            
+            if self.timer % 5 == 0:
+                self.shoot_danmaku()
+
+    def shoot_danmaku(self):
+        self.angle += 12
+        bullet_speed = 4
+        for i in range(0, 360, 90):
+            theta = math.radians(self.angle + i)
+            vx = math.cos(theta) * bullet_speed
+            vy = math.sin(theta) * bullet_speed
+            bullet = Bullet(self.rect.centerx, self.rect.centery, vy, vx, is_player_bullet=False)
+            all_sprites.add(bullet)
+            enemy_bullets.add(bullet)
 
 class Bullet(pygame.sprite.Sprite):
-    """弾クラス（自機・敵共用）"""
+    """弾クラス"""
     def __init__(self, x, y, vy, vx=0, is_player_bullet=True):
         super().__init__()
         size = 10 if is_player_bullet else 8
         self.image = pygame.Surface((size, size))
         color = WHITE if is_player_bullet else RED
         
-        # 丸い弾を描画
-        pygame.draw.circle(self.image, color, (size//2, size//2), size//2)
-        # 背景を透明にする処理（黒を透過）
-        self.image.set_colorkey(BLACK) 
-        
+        if not is_player_bullet:
+             pygame.draw.circle(self.image, color, (size//2, size//2), size//2)
+             self.image.set_colorkey(BLACK)
+        else:
+             self.image.fill(color)
+
         self.rect = self.image.get_rect()
         self.rect.center = (x, y)
         self.vy = vy
@@ -144,119 +176,166 @@ class Bullet(pygame.sprite.Sprite):
     def update(self):
         self.rect.y += self.vy
         self.rect.x += self.vx
-        # 画面外に出たら消える
-        if self.rect.bottom < 0 or self.rect.top > SCREEN_HEIGHT or \
-           self.rect.left < 0 or self.rect.right > SCREEN_WIDTH:
+        if self.rect.bottom < -50 or self.rect.top > SCREEN_HEIGHT + 50 or \
+           self.rect.left < -50 or self.rect.right > SCREEN_WIDTH + 50:
             self.kill()
 
-
-# --- 3. ゲームの初期化 ---
+# --- 3. ゲーム初期化 ---
 pygame.init()
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-pygame.display.set_caption("Touhou Style Shooter Base")
+pygame.display.set_caption("シューティング") # ウィンドウタイトルも日本語化
 clock = pygame.time.Clock()
-font = pygame.font.Font(None, 36) # デフォルトフォント
 
-# スプライトグループの作成
+# 【重要】日本語フォントの設定
+# Windowsなら 'meiryo' や 'msgothic' が使えます
+try:
+    font = pygame.font.SysFont("meiryo", 40)
+    small_font = pygame.font.SysFont("meiryo", 24)
+except:
+    font = pygame.font.Font(None, 40) # 読み込み失敗時はデフォルト
+    small_font = pygame.font.Font(None, 24)
+
+# グループ作成
 all_sprites = pygame.sprite.Group()
 enemies = pygame.sprite.Group()
+boss_group = pygame.sprite.Group()
 player_bullets = pygame.sprite.Group()
 enemy_bullets = pygame.sprite.Group()
 
-# プレイヤーの生成
 player = Player()
 all_sprites.add(player)
 
-# ゲームの状態管理
+score = 0
+next_boss_score = BOSS_APPEAR_INTERVAL
+boss_level = 1
+is_boss_active = False
+
 GAME_STATE_TITLE = 0
 GAME_STATE_PLAYING = 1
 GAME_STATE_GAMEOVER = 2
 current_state = GAME_STATE_TITLE
 
-score = 0
-
 # --- 4. ゲームループ ---
 running = True
 while running:
-    # 1. イベント処理
+    # --- イベント処理 ---
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
         
         if current_state == GAME_STATE_TITLE:
-            if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
-                # ゲーム開始（リセット）
-                all_sprites.empty()
-                enemies.empty()
-                player_bullets.empty()
-                enemy_bullets.empty()
-                player = Player()
-                all_sprites.add(player)
-                score = 0
-                current_state = GAME_STATE_PLAYING
-
-        elif current_state == GAME_STATE_PLAYING:
-            if event.type == pygame.KEYDOWN and event.key == pygame.K_z:
-                # Zキーで発射（東方風操作）
-                pass # 押しっぱなしは下のキー状態取得で処理
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_SPACE:
+                    # ゲーム開始
+                    all_sprites.empty()
+                    enemies.empty()
+                    boss_group.empty()
+                    player_bullets.empty()
+                    enemy_bullets.empty()
+                    player = Player()
+                    all_sprites.add(player)
+                    score = 0
+                    next_boss_score = BOSS_APPEAR_INTERVAL
+                    boss_level = 1
+                    is_boss_active = False
+                    current_state = GAME_STATE_PLAYING
+                
+                # ★追加機能: ESCキーで終了
+                elif event.key == pygame.K_ESCAPE:
+                    running = False # ループを抜けて終了
 
         elif current_state == GAME_STATE_GAMEOVER:
             if event.type == pygame.KEYDOWN and event.key == pygame.K_r:
                 current_state = GAME_STATE_TITLE
 
-    # 2. 更新処理 & 描画処理
-    screen.fill(BLACK) # 背景は黒
-
-    if current_state == GAME_STATE_TITLE:
-        title_text = font.render("Touhou Style Shooter", True, WHITE)
-        start_text = font.render("Press SPACE to Start", True, WHITE)
-        screen.blit(title_text, (SCREEN_WIDTH//2 - 120, SCREEN_HEIGHT//2 - 50))
-        screen.blit(start_text, (SCREEN_WIDTH//2 - 130, SCREEN_HEIGHT//2 + 10))
-
-    elif current_state == GAME_STATE_PLAYING:
-        # プレイヤーの操作（押しっぱなし対応）
+    # --- 更新処理 ---
+    if current_state == GAME_STATE_PLAYING:
         keys = pygame.key.get_pressed()
         if keys[pygame.K_z]:
             player.shoot()
 
-        # 敵の出現（ランダム）
-        if random.random() < 0.02: # 2%の確率で毎フレーム出現
-            t_type = random.choice([ENEMY_TYPE_NORMAL, ENEMY_TYPE_NORMAL, ENEMY_TYPE_WAVY, ENEMY_TYPE_SHOOTER])
-            enemy = Enemy(t_type)
-            all_sprites.add(enemy)
-            enemies.add(enemy)
+        if not is_boss_active and score >= next_boss_score:
+            is_boss_active = True
+            boss = Boss(boss_level)
+            all_sprites.add(boss)
+            boss_group.add(boss)
+            for e in enemies:
+                score += 10
+                e.kill()
 
-        # 全スプライトの更新
+        if not is_boss_active:
+            if random.random() < 0.03: 
+                t_type = random.choice([ENEMY_TYPE_NORMAL, ENEMY_TYPE_WAVY, ENEMY_TYPE_SHOOTER])
+                enemy = Enemy(t_type)
+                all_sprites.add(enemy)
+                enemies.add(enemy)
+        
         all_sprites.update()
 
-        # 衝突判定 1: プレイヤーの弾 -> 敵
         hits = pygame.sprite.groupcollide(enemies, player_bullets, True, True)
         for hit in hits:
             score += 10
-            # ここに爆発エフェクトなどを追加可能
 
-        # 衝突判定 2: 敵 または 敵の弾 -> プレイヤー (被弾処理)
-        # 敵本体との衝突
-        if pygame.sprite.spritecollide(player, enemies, False):
-            current_state = GAME_STATE_GAMEOVER
-        # 敵の弾との衝突
-        if pygame.sprite.spritecollide(player, enemy_bullets, False):
+        if is_boss_active:
+            boss_hits = pygame.sprite.groupcollide(boss_group, player_bullets, False, True)
+            for boss_sprite, bullets in boss_hits.items():
+                for b in bullets:
+                    boss_sprite.hp -= 1
+                    score += 1
+                if boss_sprite.hp <= 0:
+                    score += 1000
+                    boss_sprite.kill()
+                    is_boss_active = False
+                    boss_level += 1
+                    next_boss_score = score + BOSS_APPEAR_INTERVAL
+
+        if pygame.sprite.spritecollide(player, enemies, False) or \
+           pygame.sprite.spritecollide(player, enemy_bullets, False) or \
+           pygame.sprite.spritecollide(player, boss_group, False):
             current_state = GAME_STATE_GAMEOVER
 
-        # 描画
+    # --- 描画処理 ---
+    screen.fill(BLACK)
+
+    if current_state == GAME_STATE_TITLE:
+        # 日本語テキストの描画
+        title_text = font.render("東方風シューティング", True, WHITE)
+        start_text = font.render("スペースキーで開始", True, YELLOW)
+        quit_text = small_font.render("ESCキーで終了", True, WHITE)
+        
+        # 中央揃えで配置
+        screen.blit(title_text, (SCREEN_WIDTH//2 - title_text.get_width()//2, SCREEN_HEIGHT//2 - 60))
+        screen.blit(start_text, (SCREEN_WIDTH//2 - start_text.get_width()//2, SCREEN_HEIGHT//2 + 20))
+        screen.blit(quit_text, (SCREEN_WIDTH//2 - quit_text.get_width()//2, SCREEN_HEIGHT//2 + 100))
+
+    elif current_state == GAME_STATE_PLAYING:
         all_sprites.draw(screen)
         
-        # スコア表示
-        score_text = font.render(f"Score: {score}", True, WHITE)
+        score_text = small_font.render(f"スコア: {score}", True, WHITE)
         screen.blit(score_text, (10, 10))
+        
+        if not is_boss_active:
+            next_text = small_font.render(f"ボスまで: {next_boss_score - score}", True, YELLOW)
+            screen.blit(next_text, (10, 40))
+
+        if is_boss_active:
+            for b in boss_group:
+                pygame.draw.rect(screen, RED, (100, 20, 400, 20))
+                hp_ratio = b.hp / b.max_hp
+                pygame.draw.rect(screen, GREEN, (100, 20, 400 * hp_ratio, 20))
+                pygame.draw.rect(screen, WHITE, (100, 20, 400, 20), 2)
+                # HPの文字も追加
+                hp_text = small_font.render(f"Boss HP: {b.hp}", True, WHITE)
+                screen.blit(hp_text, (100, 45))
 
     elif current_state == GAME_STATE_GAMEOVER:
-        over_text = font.render("GAME OVER", True, RED)
-        score_res_text = font.render(f"Final Score: {score}", True, WHITE)
-        retry_text = font.render("Press R to Retry", True, WHITE)
-        screen.blit(over_text, (SCREEN_WIDTH//2 - 80, SCREEN_HEIGHT//2 - 50))
-        screen.blit(score_res_text, (SCREEN_WIDTH//2 - 90, SCREEN_HEIGHT//2))
-        screen.blit(retry_text, (SCREEN_WIDTH//2 - 100, SCREEN_HEIGHT//2 + 50))
+        over_text = font.render("ゲームオーバー", True, RED)
+        score_res_text = font.render(f"最終スコア: {score}", True, WHITE)
+        retry_text = small_font.render("Rキーでリトライ", True, WHITE)
+        
+        screen.blit(over_text, (SCREEN_WIDTH//2 - over_text.get_width()//2, SCREEN_HEIGHT//2 - 50))
+        screen.blit(score_res_text, (SCREEN_WIDTH//2 - score_res_text.get_width()//2, SCREEN_HEIGHT//2))
+        screen.blit(retry_text, (SCREEN_WIDTH//2 - retry_text.get_width()//2, SCREEN_HEIGHT//2 + 50))
 
     pygame.display.flip()
     clock.tick(FPS)
