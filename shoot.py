@@ -237,8 +237,17 @@ class PlayerReimu(Player):
         機体の色や速度、弾の連射速度を初期化する。
         """
         super().__init__()
-        # 霊夢をイメージした赤色 (シンプルな四角)
-        self.image.fill(RED)  # 赤色設定
+        # --- 紅白デザインへの変更点 ---
+        self.image.fill(WHITE) # まず全体を白（上着の色）にする
+        
+        # 下半分を赤（袴の色）で塗りつぶす
+        # Rect(x, y, width, height) -> (0, 15, 30, 15)
+        # 画像サイズが30x30なので、y=15から下が下半分
+        pygame.draw.rect(self.image, (200, 50, 50), (0, 15, 30, 15))
+        
+        # （お好みで）中央に黄色いリボンっぽい点を入れるとさらに霊夢っぽくなります
+        # pygame.draw.rect(self.image, YELLOW, (12, 12, 6, 6))
+        # ---------------------------
         
         self.speed: int = 5            # 標準速度
         self.shoot_interval: int = 120 # 誘導弾は強力なので連射は遅めに設定
